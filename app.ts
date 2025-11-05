@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // import { WebSocketServer } from "ws";
-const wsport = 8080 + Number(process.env.BASE_WS_PORT?.charAt(3));
+const wsport = Number(process.env.BASE_WS_PORT) || 8080;
 // const wss = new WebSocketServer({
 //   port: wsport,
 
