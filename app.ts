@@ -80,7 +80,7 @@ import { MongoManager } from "./models/BaseManager/MongoManager.js";
 import { WebSocketServer } from "ws";
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3001;
+const PORT = Number(process.env.BASE_PORT) || 3000;
 
 app.use(cors());
 app.use(express.json());
