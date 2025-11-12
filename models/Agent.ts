@@ -129,7 +129,8 @@ export class Agent {
 
     this.isExploring = false;
     this.endTime = new Date();
-    await Agent.getAgentRepository().updateExploringTime(false);
+    await Agent.getAgentRepository().update(this._id!, this);
+    // await Agent.getAgentRepository().updateExploringTime(false);
     console.log(
       `[${this.explore.name}] Agent ${this.name} finished exploring in ${(
         (this.endTime.getTime() - this.startTime.getTime()) /
@@ -137,8 +138,23 @@ export class Agent {
       ).toFixed(2)} seconds`
     );
 
+    // Wait for every agent to finish
+    while (true) {
+      const agents = await Agent.getAgentRepository().findAll();
+      const exploringAgents = agents.filter((a) => a.isExploring);
+      if (exploringAgents.length === 0) break;
+      console.log(
+        `[${
+          this.explore.name
+        }] Waiting for other agents to finish... (${exploringAgents
+          .map((a) => a.name)
+          .join(", ")})`
+      );
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
     console.log(`[${this.explore.name}] Saving simulation results...`);
-    SimulationManager.addExperience(
+
+    await SimulationManager.addExperience(
       await Agent.getBaseManager().getSimulationStats()
     );
   }

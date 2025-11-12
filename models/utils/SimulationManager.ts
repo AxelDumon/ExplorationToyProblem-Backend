@@ -5,7 +5,7 @@ import { configDotenv } from "dotenv";
 configDotenv({ debug: true });
 
 interface SimulationManagerProps {
-  simulations: SimulationProps[]; // All the simulations
+  simulations: SimulationProps[];
 }
 
 export class SimulationManager {

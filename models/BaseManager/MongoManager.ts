@@ -125,16 +125,6 @@ export class MongoManager extends BaseManager {
     }
   }
 
-  // interface SimulationProps {
-  // gridSideSize: number; // Number of tiles per side
-  // totalGridSize: number; // Number of tiles in total
-  // agentsStats: AgentStats[];
-  // explorationTime: number; // Seconds
-  // offlineTime: number; // Seconds
-  // dbName: string;
-  // simulationNumberID?: number;
-  // }
-
   async getSimulationStats(): Promise<SimulationProps> {
     try {
       const gridSideSize = CellMongoRepository.SIZE;
