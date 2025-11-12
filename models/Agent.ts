@@ -137,6 +137,7 @@ export class Agent {
       ).toFixed(2)} seconds`
     );
 
+    console.log(`[${this.explore.name}] Saving simulation results...`);
     SimulationManager.addExperience(
       await Agent.getBaseManager().getSimulationStats()
     );

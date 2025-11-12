@@ -6,7 +6,8 @@ interface SimulationManagerProps {
 }
 
 export class SimulationManager {
-  static RESULTS_FOLDER: fs.PathOrFileDescriptor = "/app/results.json";
+  static RESULTS_FOLDER: fs.PathOrFileDescriptor =
+    "/tmp/exploration-grid-results.json";
   // static WRITE_OPTIONS = { flag: "a", mode: "644" };
 
   static addExperience(
