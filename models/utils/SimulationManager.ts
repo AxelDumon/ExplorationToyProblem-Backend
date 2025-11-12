@@ -6,14 +6,32 @@ interface SimulationManagerProps {
 }
 
 export class SimulationManager {
-  static RESULTS_FOLDER: fs.PathOrFileDescriptor =
-    "/tmp/exploration-grid-results.json";
+  static RESULTS_FOLDER: fs.PathLike = "/tmp/exploration-grid-results.json";
   // static WRITE_OPTIONS = { flag: "a", mode: "644" };
 
   static addExperience(
     result: SimulationProps,
-    path: fs.PathOrFileDescriptor = SimulationManager.RESULTS_FOLDER
+    path: fs.PathLike = SimulationManager.RESULTS_FOLDER
   ) {
+    // Check if the file exists
+    fs.access(path, fs.constants.F_OK, (err) => {
+      if (err) {
+        // File does not exist, create it with an empty simulations array
+        const initialData: SimulationManagerProps = { simulations: [] };
+
+        fs.writeFile(path, JSON.stringify(initialData), (writeErr) => {
+          if (writeErr) {
+            console.error(`Error creating file: ${writeErr}`);
+          } else {
+            console.log(`File created successfully at ${path}`);
+          }
+        });
+
+        return;
+      }
+    });
+
+    // File exists, proceed to read and update it
     fs.readFile(path, "utf8", (err, data) => {
       if (err) {
         console.error(err);
