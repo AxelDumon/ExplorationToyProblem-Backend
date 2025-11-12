@@ -1,4 +1,5 @@
 import { BaseManager } from "./BaseManager/interfaces/BaseManager.js";
+import { SimulationManager } from "./utils/SimulationManager.js";
 
 export class Agent {
   _id?: string;
@@ -134,6 +135,10 @@ export class Agent {
         (this.endTime.getTime() - this.startTime.getTime()) /
         1000
       ).toFixed(2)} seconds`
+    );
+
+    SimulationManager.addExperience(
+      await Agent.getBaseManager().getSimulationStats()
     );
   }
 }
