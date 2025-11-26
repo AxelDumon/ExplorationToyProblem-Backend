@@ -89,6 +89,13 @@ Agent.setBaseManager(await new MongoManager().ManagerFactory());
 
 startServer().catch(console.dir);
 
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("Unhandled Rejection at:", promise, "reason:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("Uncaught Exception thrown:", err);
+});
+
 // import { MongoRsetFailover } from "./tests/MongoRsetFailover.js";
 // MongoRsetFailover.testCollectionChange().catch(console.dir);
 // MongoRsetFailover.testConnectionWhenOfflineOnLocal().catch(console.dir);

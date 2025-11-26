@@ -45,16 +45,22 @@ export class MongoManager extends BaseManager {
   async ManagerFactory(): Promise<MongoManager> {
     console.log("Creating MongoManager instance");
     const manager = new MongoManager();
-    const options: any = { serverApi: { version: "1" } };
+    const options: any = {
+      serverApi: { version: "1" },
+      maxConnecting: 3,
+      serverSelectionTimeoutMS: 3000,
+      connectTimeoutMS: 3000,
+      socketTimeoutMS: 3000,
+    };
     try {
       manager.replicationClient = new MongoClient(
         MongoManager.repl_uri,
         options
       );
-      manager.localClient = new MongoClient(
-        MongoManager.standalone_uri,
-        options
-      );
+      manager.localClient = new MongoClient(MongoManager.standalone_uri, {
+        ...options,
+        directConnection: true,
+      });
       console.log("Connecting to replication client...");
       await manager.replicationClient.connect();
       console.log("Replication client connected.");
@@ -64,7 +70,6 @@ export class MongoManager extends BaseManager {
       console.log("Local client connected.");
     } catch (e) {
       console.error("Failed to connect to MongoDB clients", e);
-      throw e;
     }
     await manager.manageConnection();
     await manager.initBase();
@@ -88,11 +93,14 @@ export class MongoManager extends BaseManager {
         this.db = this.replicationClient.db("v2grid");
       } else {
         this.db = this.localClient.db("v2grid");
+        console.log("Pinging standalone MongoDB...");
+        await this.db.command({ ping: 1 });
+        console.log("Ping successful.");
       }
 
       // Reinitialize the repositories with the new DB reference
-      this.manageCollectionReferences();
-      console.log("Repositories reinitialized with new DB reference.");
+      await this.manageCollectionReferences();
+      console.log("Repositories reinitialized with the new DB reference.");
     } catch (e) {
       console.error("Failed to manage DB reference : ", e);
       console.log("Retrying in 2 seconds...");
@@ -103,12 +111,22 @@ export class MongoManager extends BaseManager {
     }
   }
 
-  manageCollectionReferences(): void {
+  async manageCollectionReferences(): Promise<void> {
     this.cellRepository = new CellMongoRepository(() =>
       this.db.collection("cells")
     );
     this.agentRepository = new AgentMongoRepository(() =>
       this.db.collection("agents")
+    );
+    console.log("Collection references updated.");
+    // Test the connections
+    console.log(
+      "test connection",
+      await this.cellRepository.collectionGetter().findOne({})
+    );
+    console.log(
+      "test connection",
+      await this.agentRepository.collectionGetter().findOne({})
     );
   }
 
@@ -116,9 +134,25 @@ export class MongoManager extends BaseManager {
     try {
       this.clearIntervals();
 
-      // Ensure both clients are connected
-      await this.replicationClient.connect();
-      await this.localClient.connect();
+      // Only connect the client required for current mode
+      if (this.connectionType === "repl") {
+        console.log("Using replica set connection.");
+        try {
+          await this.replicationClient.connect();
+        } catch (e) {
+          console.error("Failed to connect local client in repl mode:", e);
+        }
+      } else {
+        console.log("Using standalone connection.");
+        try {
+          await this.localClient.connect();
+        } catch (e) {
+          console.error(
+            "Failed to connect local client in standalone mode:",
+            e
+          );
+        }
+      }
 
       // Manage the DB reference based on the connection type
       await this.manageDBReference();
@@ -127,7 +161,7 @@ export class MongoManager extends BaseManager {
         .watch([], { fullDocument: "updateLookup" })
         .on("change", (change) => {
           if ("fullDocument" in change && change.fullDocument) {
-            console.log("Change detected:", change.fullDocument);
+            // console.log("Change detected:", change.fullDocument);
             broadcastUpdate(change.fullDocument);
           } else {
           }
@@ -149,7 +183,6 @@ export class MongoManager extends BaseManager {
         }, 5000);
     } catch (e) {
       console.error("Failed to connect to MongoDB", e);
-      throw e;
     }
     console.log("Connected to MongoDB");
   }
@@ -179,10 +212,10 @@ export class MongoManager extends BaseManager {
       const agents = await this.agentRepository.findAll();
 
       // Step 3: Map stats with agent information and calculate duration
-      const statsWithTime = stats.map((stat) => {
-        const agent = agents.find((a) => a.name === stat._id);
+      const statsWithTime = agents.map((agent) => {
+        const stat = stats.find((s) => s._id === agent.name);
         let duration = null;
-        if (agent?.startTime && agent?.endTime) {
+        if (agent.startTime && agent.endTime) {
           duration =
             (new Date(agent.endTime).getTime() -
               new Date(agent.startTime).getTime()) /
@@ -190,12 +223,12 @@ export class MongoManager extends BaseManager {
         }
         return {
           ...stat,
-          name: agent?.name || stat._id || "Unknown",
+          name: agent?.name || stat?._id || "Unknown",
           duration: duration || 0,
-          tilesExplored: stat.count,
+          tilesExplored: stat ? stat.count : 0,
           offlineTime: 0,
-          startTime: agent?.startTime,
-          endTime: agent?.endTime,
+          startTime: agent.startTime,
+          endTime: agent.endTime,
         };
       });
 
@@ -251,6 +284,7 @@ export class MongoManager extends BaseManager {
       serverSelectionTimeoutMS: 3000,
       connectTimeoutMS: 3000,
       socketTimeoutMS: 3000,
+      maxConnecting: 3,
     });
 
     try {
@@ -258,7 +292,10 @@ export class MongoManager extends BaseManager {
       const adminDb = testClient.db("admin");
 
       // rs.status()
-      const status = await adminDb.command({ replSetGetStatus: 1 });
+      const status = await adminDb.command(
+        { replSetGetStatus: 1 },
+        { timeoutMS: 2000 }
+      );
 
       // Check the members' states
       const healthyMembers = status.members.filter((member: any) =>
@@ -271,21 +308,27 @@ export class MongoManager extends BaseManager {
         );
 
         this.connectionType = "repl";
-
         try {
           await this.replicationClient.close();
         } catch (closeError) {
-          console.error("Failed to close replication client:", closeError);
+          console.warn("Failed to close replication client:", closeError);
         }
-
         this.replicationClient = new MongoClient(MongoManager.repl_uri, {
           serverSelectionTimeoutMS: 3000,
           connectTimeoutMS: 3000,
           socketTimeoutMS: 3000,
+          maxConnecting: 3,
         });
-
-        await this.manageConnection();
+        try {
+          await this.replicationClient.connect();
+        } catch (connectError) {
+          console.warn(
+            "Failed to connect new replication client:",
+            connectError
+          );
+        }
         await this.replicateDataToRepl();
+        await this.manageConnection();
       } else if (healthyMembers.length < 3 && this.connectionType === "repl") {
         console.log(
           "Replica set is unhealthy. Less than 3 members are healthy. Switching to standalone mode..."
@@ -309,6 +352,8 @@ export class MongoManager extends BaseManager {
           serverSelectionTimeoutMS: 3000,
           connectTimeoutMS: 3000,
           socketTimeoutMS: 3000,
+          maxConnecting: 3,
+          directConnection: true,
         });
 
         await this.manageConnection();
@@ -377,23 +422,31 @@ export class MongoManager extends BaseManager {
       return;
     }
     try {
-      const localDB = this.localClient.db("v2grid");
-      const distantCells = await this.cellRepository.findAll();
+      await this.localClient.connect();
 
+      const localDB = this.localClient.db("v2grid");
+      const distantDB = this.replicationClient.db("v2grid");
+
+      // distant cells
+      const distanceCollection = new CellMongoRepository(() =>
+        distantDB.collection("cells")
+      );
+      const distantCells = await distanceCollection.findAll();
+
+      const distantPositions = new Set(
+        distantCells.map((c) => `${c.x}:${c.y}`)
+      );
       // Replicate Cells
       const localCellRepo = new CellMongoRepository(() =>
         localDB.collection("cells")
       );
       const localCells = await localCellRepo.findAll();
-      const cellsToInsert = distantCells.filter(
-        (distantCell) =>
-          !localCells.some(
-            (localCell) =>
-              (localCell.x === distantCell.x &&
-                localCell.y === distantCell.y) ||
-              localCell.valeur === 0
-          )
-      );
+
+      const cellsToInsert = localCells
+        .filter((localCell) => localCell.valeur !== 0)
+        .filter(
+          (localCell) => !distantPositions.has(`${localCell.x}:${localCell.y}`)
+        );
 
       const cellBulkOps = cellsToInsert.map((cell) => ({
         updateOne: {
