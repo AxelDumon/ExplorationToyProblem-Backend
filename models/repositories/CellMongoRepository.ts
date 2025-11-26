@@ -23,7 +23,7 @@ export class CellMongoRepository
     agent: string
   ): Promise<Cell | null> {
     return (
-      await this.collection.findOneAndUpdate(
+      await this.collectionGetter().findOneAndUpdate(
         { _id: `${x}-${y}` } as Filter<Cell>,
         {
           $inc: { valeur: increment },
@@ -36,7 +36,7 @@ export class CellMongoRepository
   }
 
   async getRandomUndiscoveredCell(): Promise<Cell | null> {
-    const foundCells: CellDocument[] = (await this.collection
+    const foundCells: CellDocument[] = (await this.collectionGetter()
       .aggregate([{ $match: { valeur: { $gt: 0 } } }])
       .toArray()) as CellDocument[];
     console.log(
@@ -109,7 +109,7 @@ export class CellMongoRepository
 
     // Upsert neighbors to ensure they exist
     for (const neighbor of validNeighbors) {
-      await this.collection.updateOne(
+      await this.collectionGetter().updateOne(
         { _id: `${neighbor.x}-${neighbor.y}` } as Filter<Cell>,
         {
           $setOnInsert: {
@@ -125,7 +125,7 @@ export class CellMongoRepository
     }
 
     // Fetch neighbors that are still undiscovered (valeur: 0)
-    return (await this.collection
+    return (await this.collectionGetter()
       .aggregate([
         {
           $match: {

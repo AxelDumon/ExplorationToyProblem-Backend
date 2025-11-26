@@ -29,8 +29,12 @@ export class MongoManager extends BaseManager {
 
   constructor() {
     super();
-    this.cellRepository = new CellMongoRepository({} as Collection<Cell>);
-    this.agentRepository = new AgentMongoRepository({} as Collection<Agent>);
+    this.cellRepository = new CellMongoRepository(
+      () => ({} as Collection<Cell>)
+    );
+    this.agentRepository = new AgentMongoRepository(
+      () => ({} as Collection<Agent>)
+    );
     this.replicationClient = {} as MongoClient;
     this.localClient = {} as MongoClient;
     this.db = {} as Db;
@@ -85,7 +89,6 @@ export class MongoManager extends BaseManager {
       } else {
         this.db = this.localClient.db("v2grid");
       }
-      console.log("DB reference set to:", this.db.databaseName);
 
       // Reinitialize the repositories with the new DB reference
       this.manageCollectionReferences();
@@ -97,13 +100,14 @@ export class MongoManager extends BaseManager {
         await this.manageDBReference();
       }, 2000);
     } finally {
-      console.log("DB reference managed:", this.db.databaseName);
     }
   }
 
   manageCollectionReferences(): void {
-    this.cellRepository = new CellMongoRepository(this.db.collection("cells"));
-    this.agentRepository = new AgentMongoRepository(
+    this.cellRepository = new CellMongoRepository(() =>
+      this.db.collection("cells")
+    );
+    this.agentRepository = new AgentMongoRepository(() =>
       this.db.collection("agents")
     );
   }
@@ -163,7 +167,7 @@ export class MongoManager extends BaseManager {
     try {
       // Step 1: Aggregate stats from the cell collection
       const stats = await this.cellRepository
-        .getCollection()
+        .collectionGetter()
         .aggregate([
           { $unwind: "$agents" },
           { $group: { _id: "$agents", count: { $sum: 1 } } },
@@ -267,6 +271,19 @@ export class MongoManager extends BaseManager {
         );
 
         this.connectionType = "repl";
+
+        try {
+          await this.replicationClient.close();
+        } catch (closeError) {
+          console.error("Failed to close replication client:", closeError);
+        }
+
+        this.replicationClient = new MongoClient(MongoManager.repl_uri, {
+          serverSelectionTimeoutMS: 3000,
+          connectTimeoutMS: 3000,
+          socketTimeoutMS: 3000,
+        });
+
         await this.manageConnection();
         await this.replicateDataToRepl();
       } else if (healthyMembers.length < 3 && this.connectionType === "repl") {
@@ -281,6 +298,19 @@ export class MongoManager extends BaseManager {
       if (this.connectionType !== "standalone") {
         console.log("Switching to standalone mode...");
         this.connectionType = "standalone";
+
+        try {
+          await this.localClient.close();
+        } catch (closeError) {
+          console.error("Failed to close local client:", closeError);
+        }
+
+        this.localClient = new MongoClient(MongoManager.standalone_uri, {
+          serverSelectionTimeoutMS: 3000,
+          connectTimeoutMS: 3000,
+          socketTimeoutMS: 3000,
+        });
+
         await this.manageConnection();
       }
     } finally {
@@ -301,10 +331,10 @@ export class MongoManager extends BaseManager {
       // Replicate Cells
 
       const standaloneDb = this.localClient.db("v2grid");
-      const standaloneCellRepo = new CellMongoRepository(
+      const standaloneCellRepo = new CellMongoRepository(() =>
         standaloneDb.collection("cells")
       );
-      const standaloneAgentRepo = new AgentMongoRepository(
+      const standaloneAgentRepo = new AgentMongoRepository(() =>
         standaloneDb.collection("agents")
       );
 
@@ -317,8 +347,8 @@ export class MongoManager extends BaseManager {
       }));
 
       if (cells.length > 0) {
-        await standaloneCellRepo.getCollection().deleteMany({});
-        await standaloneCellRepo.getCollection().bulkWrite(cellBulkOps);
+        await standaloneCellRepo.collectionGetter().deleteMany({});
+        await standaloneCellRepo.collectionGetter().bulkWrite(cellBulkOps);
       }
 
       // Replicate Agents
@@ -331,8 +361,8 @@ export class MongoManager extends BaseManager {
       }));
 
       if (agents.length > 0) {
-        await standaloneAgentRepo.getCollection().deleteMany({});
-        await standaloneAgentRepo.getCollection().bulkWrite(agentBulkOps);
+        await standaloneAgentRepo.collectionGetter().deleteMany({});
+        await standaloneAgentRepo.collectionGetter().bulkWrite(agentBulkOps);
       }
 
       console.log("Data replication to standalone MongoDB completed.");
@@ -351,7 +381,7 @@ export class MongoManager extends BaseManager {
       const distantCells = await this.cellRepository.findAll();
 
       // Replicate Cells
-      const localCellRepo = new CellMongoRepository(
+      const localCellRepo = new CellMongoRepository(() =>
         localDB.collection("cells")
       );
       const localCells = await localCellRepo.findAll();
@@ -374,7 +404,7 @@ export class MongoManager extends BaseManager {
       }));
 
       if (cellBulkOps.length > 0) {
-        await localCellRepo.getCollection().bulkWrite(cellBulkOps);
+        await localCellRepo.collectionGetter().bulkWrite(cellBulkOps);
       }
 
       console.log("Data replication to repl MongoDB completed.");
