@@ -1,7 +1,6 @@
 import fs from "node:fs";
 import { SimulationProps } from "./couchTypes";
 import { configDotenv } from "dotenv";
-import { SimulationManager } from "./SimulationManager.js";
 import path from "node:path";
 
 configDotenv({ debug: true });
